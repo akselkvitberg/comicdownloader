@@ -12,20 +12,26 @@ open SixLabors.ImageSharp
 open SixLabors.ImageSharp.PixelFormats
 open Microsoft.Extensions.Logging
 
-let downloadImages (logger:ILogger) (blobClient :BlobServiceClient) =
+let downloadImages (logger: ILogger) (blobClient: BlobServiceClient) =
     let httpClient = new HttpClient()
 
     logger.LogInformation "Loading settings"
-        
-    let vgCookie = BlobClient.load<string> "settings" "vgcookie" blobClient |> Option.defaultValue ""
-    let oneDriveSettings = BlobClient.load<OneDrive.OneDriveSettings> "settings" "onedrive" blobClient
-    let telegramSettings = BlobClient.load<Telegram.TelegramSettings> "settings" "telegram" blobClient
 
-    let downloadUrl (urlTemplate:string) =
+    let vgCookie =
+        BlobClient.load<string> "settings" "vgcookie" blobClient
+        |> Option.defaultValue ""
+
+    let oneDriveSettings =
+        BlobClient.load<OneDrive.OneDriveSettings> "settings" "onedrive" blobClient
+
+    let telegramSettings =
+        BlobClient.load<Telegram.TelegramSettings> "settings" "telegram" blobClient
+
+    let downloadUrl (urlTemplate: string) =
         let imageUrl = String.Format(urlTemplate, DateTime.Now.Year)
         httpClient.GetByteArrayAsync(imageUrl)
 
-    let downloadRss (url:string) =
+    let downloadRss (url: string) =
         task {
             let! xml = httpClient.GetStringAsync(url)
             let doc = XElement.Parse(xml)
@@ -35,47 +41,57 @@ let downloadImages (logger:ILogger) (blobClient :BlobServiceClient) =
             return! httpClient.GetByteArrayAsync(imageUrl)
         }
 
-    let downloadTU comic = 
+    let downloadTU comic =
         let timeString = DateTime.Now.ToString("yyyy-MM-dd")
         let data = $"https://www.tu.no/api/widgets/comics?name{comic}&date={timeString}"
         httpClient.GetByteArrayAsync(data)
 
-    let downloadVg comic = 
-            httpClient.DefaultRequestHeaders.Add("Cookie", [| "SP_ID=" + vgCookie|])
-            httpClient.DefaultRequestHeaders.Add("User-Agent", [| "Mozilla/5.0 (Windows NT 10.0; WOW64; rv:44.0) Gecko/20100101 Firefox/44.0" |])
-            let timeString = DateTime.Now.ToString("yyyy-MM-dd")
+    let downloadVg comic =
+        httpClient.DefaultRequestHeaders.Add("Cookie", [| "SP_ID=" + vgCookie |])
 
-            httpClient.GetByteArrayAsync($"https://www.vg.no/tegneserier/api/images/{comic}/{timeString}")
+        httpClient.DefaultRequestHeaders.Add(
+            "User-Agent",
+            [| "Mozilla/5.0 (Windows NT 10.0; WOW64; rv:44.0) Gecko/20100101 Firefox/44.0" |]
+        )
 
-    let downloadXkcd () = 
+        let timeString = DateTime.Now.ToString("yyyy-MM-dd")
+
+        httpClient.GetByteArrayAsync($"https://www.vg.no/tegneserier/api/images/{comic}/{timeString}")
+
+    let downloadXkcd () =
         task {
             let! result = httpClient.GetStringAsync("https://xkcd.com/info.0.json")
-            let xkcdRss = JsonSerializer.Deserialize<{| img:string |}>(result)
+            let xkcdRss = JsonSerializer.Deserialize<{| img: string |}>(result)
             return! httpClient.GetByteArrayAsync(xkcdRss.img)
         }
-        
-        
-    let getHash comicName (bytes:byte array) =
+
+
+    let getHash comicName (bytes: byte array) =
         let image = Image.Load<Rgba32>(bytes)
-        let pixelBytes = Array.create<byte> (image.Width * image.Height * Unsafe.SizeOf<Rgba32>()) 0uy
+
+        let pixelBytes =
+            Array.create<byte> (image.Width * image.Height * Unsafe.SizeOf<Rgba32>()) 0uy
+
         image.CopyPixelDataTo(pixelBytes)
         MD5.HashData(pixelBytes) |> Convert.ToBase64String
 
-    let getFileName (bytes: byte array) = 
-        let extension = 
-            match bytes[0..4] with 
-            | [|0xFFuy; 0xD8uy; _; _|] -> ".jpg"
-            | [|0x42uy; 0x4Duy; _; _|] -> ".bmp"
+    let getFileName (bytes: byte array) =
+        let extension =
+            match bytes[0..4] with
+            | [| 0xFFuy; 0xD8uy; _; _ |] -> ".jpg"
+            | [| 0x42uy; 0x4Duy; _; _ |] -> ".bmp"
             | [| 0x47uy; 0x49uy; 0x46uy |] -> ".gif"
             | _ -> ".png"
+
         DateTime.Now.ToString("yyyy.MM.dd") + extension
 
     let downloadComic comicName downloadFunction =
         task {
-            try 
+            try
                 let! bytes = downloadFunction
                 let fileName = getFileName bytes
                 let hash = getHash comicName bytes
+
                 if BlobClient.exists comicName hash blobClient then
                     ()
                 else
@@ -83,7 +99,7 @@ let downloadImages (logger:ILogger) (blobClient :BlobServiceClient) =
                     let! telegram = Telegram.sendMessage telegramSettings bytes
                     let blob = BlobClient.storeBinary comicName hash bytes blobClient
                     ()
-            with exn -> 
+            with exn ->
                 logger.LogError(exn, "Could not download {ComicName}", comicName)
         }
 
@@ -94,6 +110,7 @@ let downloadImages (logger:ILogger) (blobClient :BlobServiceClient) =
         do! downloadComic "Lunch VG" (downloadVg "lunch")
         do! downloadComic "Tegnehanne" (downloadVg "hanneland")
         do! downloadComic "Storefri" (downloadVg "storefri")
+        do! downloadComic "Pappa" (downloadVg "pappa")
 
         do! downloadComic "Lunch TU" (downloadTU "lunch")
 
@@ -101,6 +118,6 @@ let downloadImages (logger:ILogger) (blobClient :BlobServiceClient) =
 
         do! downloadComic "Lunch E24" (downloadUrl "https://api.e24.no/content/v1/comics/{0:yyyy}-{0:MM}-{0:dd}")
 
-        do! downloadComic "Calvin and Hobbes" (downloadRss "https://www.comicsrss.com/rss/calvinandhobbes.rss")
+        //do! downloadComic "Calvin and Hobbes" (downloadRss "https://www.comicsrss.com/rss/calvinandhobbes.rss")
         do! downloadComic "Swords" (downloadRss "https://swordscomic.com/comic/feed/")
     }
