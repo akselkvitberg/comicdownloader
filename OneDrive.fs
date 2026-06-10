@@ -4,12 +4,14 @@
 open System.Threading.Tasks
 open Microsoft.Graph
 open System.Net.Http
+open System.Collections.Generic
 open System.Text
 open System.Text.Json.Nodes
 open Azure.Core
 open System
 open System.IO
 open Microsoft.Graph.Models
+open Microsoft.Extensions.Logging
 
 let client = new HttpClient();
 
@@ -18,25 +20,45 @@ type OneDriveSettings = {
     RefreshToken: string
 }
 
-let getAccessToken settings =
-    let body = $"client_id={settings.ClientId}&refresh_token={settings.RefreshToken}&redirect_uri=http://localhost:8000&grant_type=refresh_token";
+let getAccessToken (logger: ILogger) settings =
     task {
-        let! result = client.PostAsync("https://login.microsoftonline.com/common/oauth2/v2.0/token", new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded"))
-        let! json = result.Content.ReadAsStringAsync()
-        
-        let node = JsonNode.Parse(json);
-        let refreshToken = node["refresh_token"].GetValue<string>()
-        let accessToken = node["access_token"].GetValue<string>();
+        logger.LogInformation("Refreshing OneDrive access token")
 
-        return accessToken, refreshToken
+        let formValues =
+            [
+                KeyValuePair<string, string>("client_id", settings.ClientId)
+                KeyValuePair<string, string>("refresh_token", settings.RefreshToken)
+                KeyValuePair<string, string>("redirect_uri", "http://localhost:8000")
+                KeyValuePair<string, string>("grant_type", "refresh_token")
+            ]
+
+        use body = new FormUrlEncodedContent(formValues)
+        let! result = client.PostAsync("https://login.microsoftonline.com/common/oauth2/v2.0/token", body)
+        let! json = result.Content.ReadAsStringAsync()
+
+        if not result.IsSuccessStatusCode then
+            logger.LogError("OneDrive token refresh failed with status {StatusCode}", int result.StatusCode)
+            return raise (InvalidOperationException($"OneDrive token refresh failed ({int result.StatusCode} {result.StatusCode}): {json}"))
+        else
+            let node = JsonNode.Parse(json);
+            let refreshToken = node["refresh_token"].GetValue<string>()
+            let accessToken = node["access_token"].GetValue<string>();
+
+            logger.LogInformation("OneDrive access token refreshed successfully")
+
+            return accessToken, refreshToken
     }
 
-let uploadFile (settings) folderName fileName (bytes:byte array) =
+let uploadFile (logger: ILogger) (settings) folderName fileName (bytes:byte array) =
     match settings with
-    | None -> Task.FromResult(Error (exn("No settings")))
+    | None ->
+        logger.LogWarning("Skipping OneDrive upload for {FolderName}/{FileName} because no OneDrive settings were found", folderName, fileName)
+        Task.FromResult(Error (exn("No settings")))
     | Some settings ->
         task {
-            let! accessToken, _ = getAccessToken settings
+            logger.LogInformation("Uploading {FileName} to OneDrive folder {FolderName}", fileName, folderName)
+
+            let! accessToken, _ = getAccessToken logger settings
 
             let token = DelegatedTokenCredential.Create(fun _ _ -> AccessToken(accessToken, DateTimeOffset.Now.AddMinutes(1)))
             let client = new GraphServiceClient(token)
@@ -63,11 +85,14 @@ let uploadFile (settings) folderName fileName (bytes:byte array) =
                     let fileUploadTask = LargeFileUploadTask<DriveItem>(uploadSession, ms, maxSliceSize)
 
                     let! _ = fileUploadTask.UploadAsync()
+                    logger.LogInformation("OneDrive upload completed for {FolderName}/{FileName}", folderName, fileName)
                     return (Ok "File uploaded")
                 else
                     let! _ = client.Drives[driveId].Items[appRoot.Id].ItemWithPath($"{folderName}/{fileName}").Content.PutAsync(ms)
+                    logger.LogInformation("OneDrive upload completed for {FolderName}/{FileName}", folderName, fileName)
                     return (Ok "File uploaded")
             with
             | e -> 
+                logger.LogError(e, "OneDrive upload failed for {FolderName}/{FileName}", folderName, fileName)
                 return (Error e)
         }

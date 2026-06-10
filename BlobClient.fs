@@ -1,60 +1,55 @@
 module BlobClient
 
-open System.Text.RegularExpressions
-open Azure
-open Azure.Storage.Blobs
-open System.Text.Json
 open System
+open System.Text
+open System.Text.Json
 
-let private toOption (response: Response<'a>) = 
-    if response.HasValue then Some response.Value
-    else None
+let private serialize<'a> (data: 'a) =
+    match box data with
+    | :? string as value -> value
+    | _ -> JsonSerializer.Serialize data
 
-let private normalize (name:string) =
-    Regex.Replace(name.ToLower(), "[^a-zA-Z0-9-]+", "")
+let private deserialize<'a> (data: string) =
+    if typeof<'a> = typeof<string> then
+        Some (data |> box |> unbox<'a>)
+    else
+        data
+        |> JsonSerializer.Deserialize<'a>
+        |> function
+            | null -> None
+            | value -> Some value
 
-let store container path (data:'a) (client: BlobServiceClient) =
-    let container = normalize container
-    let path = normalize path
-    let containerClient = client.GetBlobContainerClient(container)
-    containerClient.CreateIfNotExists() |> ignore
-    let blobClient = containerClient.GetBlobClient(path)
-    blobClient.DeleteIfExists() |> ignore
-    let json = data |> JsonSerializer.Serialize |> BinaryData
-    blobClient.Upload(json) |> toOption |> Option.isSome
+let private imageContentType (data: byte array) =
+    let header = data |> Array.truncate 4
 
-let storeBinary container path (data: byte array) (client: BlobServiceClient) =
-    let container = normalize container
-    let path = normalize path
-    let containerClient = client.GetBlobContainerClient(container)
-    containerClient.CreateIfNotExists() |> ignore
-    let blobClient = containerClient.GetBlobClient(path)
-    blobClient.DeleteIfExists() |> ignore
-    let binaryData = data |> BinaryData
-    blobClient.Upload(binaryData) |> toOption |> Option.isSome
+    match header with
+    | [| 0xFFuy; 0xD8uy; _; _ |] -> "image/jpeg"
+    | [| 0x42uy; 0x4Duy; _; _ |] -> "image/bmp"
+    | [| 0x47uy; 0x49uy; 0x46uy; _ |] -> "image/gif"
+    | [| 0x89uy; 0x50uy; 0x4Euy; 0x47uy |] -> "image/png"
+    | _ -> "application/octet-stream"
 
-let load<'a> container path (client: BlobServiceClient) =
-    let container = normalize container
-    let path = normalize path
-    let containerClient = client.GetBlobContainerClient(container)
-    containerClient.CreateIfNotExists() |> ignore
-    let blobClient = containerClient.GetBlobClient(path)
-    match blobClient.Exists() |> toOption with
-    | Some true -> 
-        match blobClient.DownloadContent() |> toOption with
-        | Some data -> 
-            data.Content.ToString()
-            |> JsonSerializer.Deserialize<'a>
-            |> function | null -> None | v -> Some v
-        | _ -> None
-    | _ -> None
+let store container path (data:'a) (context: StorageContext.Context) =
+    let serialized = serialize data
+
+    if StorageContext.normalize container = "settings" then
+        SecretStore.store container path serialized context
+    else
+        serialized
+        |> Encoding.UTF8.GetBytes
+        |> fun bytes -> ObjectStore.store container path "application/json" bytes context
+
+let storeBinary container path (data: byte array) (context: StorageContext.Context) =
+    ObjectStore.store container path (imageContentType data) data context
+
+let load<'a> container path (context: StorageContext.Context) =
+    let data =
+        if StorageContext.normalize container = "settings" then
+            SecretStore.load container path context
+        else
+            ObjectStore.load container path context
+
+    data |> Option.bind deserialize<'a>
     
-let exists container path (client: BlobServiceClient) =
-    let container = normalize container
-    let path = normalize path
-    let containerClient = client.GetBlobContainerClient(container)
-    containerClient.CreateIfNotExists() |> ignore
-    let blobClient = containerClient.GetBlobClient(path)
-    match blobClient.Exists() |> toOption with
-    | Some true -> true
-    | _ -> false
+let exists container path (context: StorageContext.Context) =
+    ObjectStore.exists container path context

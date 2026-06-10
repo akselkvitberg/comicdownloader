@@ -7,25 +7,39 @@ open System.Xml.Linq
 open System.Text.RegularExpressions
 open System
 open System.Text.Json
-open Azure.Storage.Blobs
 open SixLabors.ImageSharp
 open SixLabors.ImageSharp.PixelFormats
 open Microsoft.Extensions.Logging
 
-let downloadImages (logger: ILogger) (blobClient: BlobServiceClient) =
+let private formatDownloadError comicName (exn: exn) =
+    let message = $"Comic download failed for {comicName}: {exn.Message}"
+
+    if message.Length > 4000 then
+        message.Substring(0, 4000)
+    else
+        message
+
+let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
     let httpClient = new HttpClient()
 
     logger.LogInformation "Loading settings"
 
     let vgCookie =
-        BlobClient.load<string> "settings" "vgcookie" blobClient
+        BlobClient.load<string> "settings" "vgcookie" storageContext
         |> Option.defaultValue ""
 
     let oneDriveSettings =
-        BlobClient.load<OneDrive.OneDriveSettings> "settings" "onedrive" blobClient
+        BlobClient.load<OneDrive.OneDriveSettings> "settings" "onedrive" storageContext
 
     let telegramSettings =
-        BlobClient.load<Telegram.TelegramSettings> "settings" "telegram" blobClient
+        BlobClient.load<Telegram.TelegramSettings> "settings" "telegram" storageContext
+
+    logger.LogInformation(
+        "Settings loaded. OneDrive configured: {HasOneDriveSettings}. Telegram configured: {HasTelegramSettings}. VG cookie configured: {HasVgCookie}",
+        Option.isSome oneDriveSettings,
+        Option.isSome telegramSettings,
+        not (String.IsNullOrWhiteSpace(vgCookie))
+    )
 
     let downloadUrl (urlTemplate: string) =
         let imageUrl = String.Format(urlTemplate, DateTime.Now.Year)
@@ -85,32 +99,54 @@ let downloadImages (logger: ILogger) (blobClient: BlobServiceClient) =
 
         DateTime.Now.ToString("yyyy.MM.dd") + extension
 
-    let downloadComic comicName downloadFunction =
+    let downloadComic comicName (downloadFunction: Threading.Tasks.Task<byte array>) =
         task {
             try
+                logger.LogInformation("Starting comic download for {ComicName}", [| box comicName |])
                 let! bytes = downloadFunction
+                logger.LogInformation("Downloaded {ByteCount} bytes for {ComicName}", [| box bytes.Length; box comicName |])
                 let fileName = getFileName bytes
                 let hash = getHash comicName bytes
 
-                if BlobClient.exists comicName hash blobClient then
+                if BlobClient.exists comicName hash storageContext then
+                    logger.LogInformation("Skipping {ComicName} because hash {Hash} already exists", [| box comicName; box hash |])
                     ()
                 else
-                    let! oneDriveResult = OneDrive.uploadFile oneDriveSettings comicName fileName bytes
-                    let! telegram = Telegram.sendMessage telegramSettings bytes
-                    let blob = BlobClient.storeBinary comicName hash bytes blobClient
+                    logger.LogInformation("New comic detected for {ComicName}; writing filename {FileName} with hash {Hash}", [| box comicName; box fileName; box hash |])
+
+                    let! oneDriveResult = OneDrive.uploadFile logger oneDriveSettings comicName fileName bytes
+
+                    match oneDriveResult with
+                    | Ok _ -> logger.LogInformation("OneDrive upload succeeded for {ComicName}", [| box comicName |])
+                    | Error error -> logger.LogWarning(error, "OneDrive upload returned an error for {ComicName}", [| box comicName |])
+
+                    let! telegramResult = Telegram.sendMessage logger telegramSettings bytes
+
+                    match telegramResult with
+                    | Ok _ -> logger.LogInformation("Telegram image send succeeded for {ComicName}", [| box comicName |])
+                    | Error error -> logger.LogWarning(error, "Telegram image send returned an error for {ComicName}", [| box comicName |])
+
+                    BlobClient.storeBinary comicName hash bytes storageContext |> ignore
+                    logger.LogInformation("Stored {ComicName} bytes in object storage under hash {Hash}", [| box comicName; box hash |])
                     ()
             with exn ->
                 logger.LogError(exn, "Could not download {ComicName}", comicName)
+
+                let! _ =
+                    Telegram.sendText logger telegramSettings (formatDownloadError comicName exn)
+
+                ()
         }
 
     task {
-        do! downloadComic "Pondus" (downloadVg "pondus")
-        do! downloadComic "VG Gjesteserie" (downloadVg "gjesteserie")
-        do! downloadComic "Hjalmar" (downloadVg "hjalmar")
-        do! downloadComic "Lunch VG" (downloadVg "lunch")
-        do! downloadComic "Tegnehanne" (downloadVg "hanneland")
-        do! downloadComic "Storefri" (downloadVg "storefri")
-        do! downloadComic "Pappa" (downloadVg "pappa")
+        logger.LogInformation("Starting comic download batch")
+        // do! downloadComic "Pondus" (downloadVg "pondus")
+        // do! downloadComic "VG Gjesteserie" (downloadVg "gjesteserie")
+        // do! downloadComic "Hjalmar" (downloadVg "hjalmar")
+        // do! downloadComic "Lunch VG" (downloadVg "lunch")
+        // do! downloadComic "Tegnehanne" (downloadVg "hanneland")
+        // do! downloadComic "Storefri" (downloadVg "storefri")
+        // do! downloadComic "Pappa" (downloadVg "pappa")
 
         do! downloadComic "Lunch TU" (downloadTU "lunch")
 
@@ -120,4 +156,5 @@ let downloadImages (logger: ILogger) (blobClient: BlobServiceClient) =
 
         //do! downloadComic "Calvin and Hobbes" (downloadRss "https://www.comicsrss.com/rss/calvinandhobbes.rss")
         do! downloadComic "Swords" (downloadRss "https://swordscomic.com/comic/feed/")
+        logger.LogInformation("Comic download batch completed")
     }

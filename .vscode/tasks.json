@@ -2,10 +2,11 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "clean (functions)",
+			"label": "clean",
 			"command": "dotnet",
 			"args": [
 				"clean",
+				"./comicdownloader.fsproj",
 				"/property:GenerateFullPaths=true",
 				"/consoleloggerparameters:NoSummary"
 			],
@@ -13,15 +14,16 @@
 			"problemMatcher": "$msCompile"
 		},
 		{
-			"label": "build (functions)",
+			"label": "build",
 			"command": "dotnet",
 			"args": [
 				"build",
+				"./comicdownloader.fsproj",
 				"/property:GenerateFullPaths=true",
 				"/consoleloggerparameters:NoSummary"
 			],
 			"type": "process",
-			"dependsOn": "clean (functions)",
+			"dependsOn": "clean",
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -29,10 +31,11 @@
 			"problemMatcher": "$msCompile"
 		},
 		{
-			"label": "clean release (functions)",
+			"label": "clean release",
 			"command": "dotnet",
 			"args": [
 				"clean",
+				"./comicdownloader.fsproj",
 				"--configuration",
 				"Release",
 				"/property:GenerateFullPaths=true",
@@ -42,28 +45,57 @@
 			"problemMatcher": "$msCompile"
 		},
 		{
-			"label": "publish (functions)",
+			"label": "publish",
 			"command": "dotnet",
 			"args": [
 				"publish",
+				"./comicdownloader.fsproj",
 				"--configuration",
 				"Release",
 				"/property:GenerateFullPaths=true",
 				"/consoleloggerparameters:NoSummary"
 			],
 			"type": "process",
-			"dependsOn": "clean release (functions)",
+			"dependsOn": "clean release",
 			"problemMatcher": "$msCompile"
 		},
 		{
-			"type": "func",
-			"dependsOn": "build (functions)",
-			"options": {
-				"cwd": "${workspaceFolder}/bin/Debug/net9.0"
-			},
-			"command": "host start",
+			"label": "publish container",
+			"command": "dotnet",
+			"args": [
+				"publish",
+				"./comicdownloader.fsproj",
+				"--configuration",
+				"Release",
+				"-t:PublishContainer",
+				"-p:ContainerArchiveOutputPath=bin/Release/net10.0/comicdownloader-image.tar.gz",
+				"/property:GenerateFullPaths=true",
+				"/consoleloggerparameters:NoSummary"
+			],
+			"type": "process",
+			"dependsOn": "clean release",
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"label": "run web",
+			"command": "dotnet",
+			"args": [
+				"run",
+				"--project",
+				"./comicdownloader.fsproj"
+			],
+			"type": "process",
+			"dependsOn": "build",
 			"isBackground": true,
-			"problemMatcher": "$func-dotnet-watch"
+			"problemMatcher": {
+				"owner": "csharp",
+				"pattern": "$msCompile",
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "^.*$",
+					"endsPattern": "Now listening on:"
+				}
+			}
 		}
 	]
 }

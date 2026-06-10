@@ -5,6 +5,7 @@ open Telegram.Bot
 open Telegram.Bot.Types
 open System.Net.Http
 open System.IO
+open Microsoft.Extensions.Logging
 
 let client = new HttpClient()
 
@@ -13,16 +14,41 @@ type TelegramSettings = {
     User: string
 }
 
-let sendMessage settings (image: byte array) =
+let sendText (logger: ILogger) settings (message: string) =
     match settings with
-    | None -> Task.FromResult(Error (exn("No settings")))
+    | None ->
+        logger.LogWarning("Skipping Telegram text message because no Telegram settings were found")
+        Task.FromResult(Error (exn("No settings")))
     | Some settings ->
         let telegramClient = TelegramBotClient(settings.ApiKey, client)
-        use ms = new MemoryStream(image)
         task {
             try
-                let! _ = telegramClient.SendPhoto(settings.User, InputFile.FromStream(ms))
+                logger.LogInformation("Sending Telegram text message")
+                let! _ = telegramClient.SendMessage(settings.User, message)
+                logger.LogInformation("Telegram text message sent")
                 return Ok "Sent"
             with
-                | exn -> return Error exn
+                | exn ->
+                    logger.LogError(exn, "Telegram text message failed")
+                    return Error exn
+        }
+
+let sendMessage (logger: ILogger) settings (image: byte array) =
+    match settings with
+    | None ->
+        logger.LogWarning("Skipping Telegram image send because no Telegram settings were found")
+        Task.FromResult(Error (exn("No settings")))
+    | Some settings ->
+        let telegramClient = TelegramBotClient(settings.ApiKey, client)
+        task {
+            try
+                use ms = new MemoryStream(image)
+                logger.LogInformation("Sending Telegram image with {ByteCount} bytes", image.Length)
+                let! _ = telegramClient.SendPhoto(settings.User, InputFile.FromStream(ms))
+                logger.LogInformation("Telegram image sent")
+                return Ok "Sent"
+            with
+                | exn ->
+                    logger.LogError(exn, "Telegram image send failed")
+                    return Error exn
         }

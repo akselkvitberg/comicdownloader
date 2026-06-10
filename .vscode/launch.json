@@ -2,10 +2,23 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Attach to .NET Functions",
+            "name": "Launch Comic Downloader",
             "type": "coreclr",
-            "request": "attach",
-            "processId": "${command:azureFunctions.pickProcess}"
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/bin/Debug/net10.0/comicdownloader.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "internalConsole",
+            "env": {
+                "ASPNETCORE_URLS": "http://127.0.0.1:8080"
+            }
+        },
+        {
+            "name": "Attach to Comic Downloader",
+            "type": "coreclr",
+            "request": "attach"
         }
     ]
 }
