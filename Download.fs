@@ -1,6 +1,7 @@
 ﻿module comicdownloader.Download
 
 open System.Net.Http
+open System.Net
 open System.Runtime.CompilerServices
 open System.Security.Cryptography
 open System.Xml.Linq
@@ -55,6 +56,52 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
             return! httpClient.GetByteArrayAsync(imageUrl)
         }
 
+    let downloadFarSide () =
+        task {
+            let pageUrl = DateTime.Now.ToString("'https://www.thefarside.com/'yyyy'/'MM'/'dd")
+            use request = new HttpRequestMessage(HttpMethod.Get, pageUrl)
+            request.Headers.UserAgent.ParseAdd("Mozilla/5.0")
+
+            let! response = httpClient.SendAsync(request)
+            response.EnsureSuccessStatusCode() |> ignore
+
+            let! html = response.Content.ReadAsStringAsync()
+
+            let comics =
+                Regex.Matches(
+                    html,
+                    "<div class=\"card tfs-comic js-comic\">.*?<img[^>]*data-src=\"(https://featureassets\\.amuniversal\\.com/assets/[^\"]+)\".*?<figcaption class=\"figure-caption\">(.*?)</figcaption>",
+                    RegexOptions.Singleline
+                )
+                |> Seq.cast<Match>
+                |> Seq.toList
+
+            let selectedComic =
+                comics
+                |> List.tryPick (fun comic ->
+                    let caption =
+                        comic.Groups[2].Value
+                        |> fun value -> Regex.Replace(value, "<.*?>", "")
+                        |> WebUtility.HtmlDecode
+                        |> fun value -> value.Trim()
+
+                    if String.IsNullOrWhiteSpace(caption) then
+                        None
+                    else
+                        Some(comic.Groups[1].Value, Some caption))
+
+            let imageUrl, caption =
+                match selectedComic with
+                | Some comic -> comic
+                | None ->
+                    match comics |> List.tryHead with
+                    | Some comic -> comic.Groups[1].Value, None
+                    | None -> failwith $"Could not find The Far Side comic image on {pageUrl}"
+
+            let! bytes = httpClient.GetByteArrayAsync(imageUrl)
+            return bytes, caption
+        }
+
     let downloadTU comic =
         let timeString = DateTime.Now.ToString("yyyy-MM-dd")
         let data = $"https://www.tu.no/api/widgets/comics?name{comic}&date={timeString}"
@@ -75,8 +122,9 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
     let downloadXkcd () =
         task {
             let! result = httpClient.GetStringAsync("https://xkcd.com/info.0.json")
-            let xkcdRss = JsonSerializer.Deserialize<{| img: string |}>(result)
-            return! httpClient.GetByteArrayAsync(xkcdRss.img)
+            let xkcdRss = JsonSerializer.Deserialize<{| img: string; alt: string |}>(result)
+            let! bytes = httpClient.GetByteArrayAsync(xkcdRss.img)
+            return bytes, Some xkcdRss.alt
         }
 
 
@@ -99,11 +147,11 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
 
         DateTime.Now.ToString("yyyy.MM.dd") + extension
 
-    let downloadComic comicName (downloadFunction: Threading.Tasks.Task<byte array>) =
+    let downloadComicWithCaption comicName (downloadFunction: Threading.Tasks.Task<byte array * string option>) =
         task {
             try
                 logger.LogInformation("Starting comic download for {ComicName}", [| box comicName |])
-                let! bytes = downloadFunction
+                let! bytes, telegramCaption = downloadFunction
                 logger.LogInformation("Downloaded {ByteCount} bytes for {ComicName}", [| box bytes.Length; box comicName |])
                 let fileName = getFileName bytes
                 let hash = getHash comicName bytes
@@ -120,7 +168,7 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
                     | Ok _ -> logger.LogInformation("OneDrive upload succeeded for {ComicName}", [| box comicName |])
                     | Error error -> logger.LogWarning(error, "OneDrive upload returned an error for {ComicName}", [| box comicName |])
 
-                    let! telegramResult = Telegram.sendMessage logger telegramSettings bytes
+                    let! telegramResult = Telegram.sendMessage logger telegramSettings bytes telegramCaption
 
                     match telegramResult with
                     | Ok _ -> logger.LogInformation("Telegram image send succeeded for {ComicName}", [| box comicName |])
@@ -138,6 +186,14 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
                 ()
         }
 
+    let downloadComic comicName (downloadFunction: Threading.Tasks.Task<byte array>) =
+        downloadComicWithCaption comicName (
+            task {
+                let! bytes = downloadFunction
+                return bytes, None
+            }
+        )
+
     task {
         logger.LogInformation("Starting comic download batch")
         // do! downloadComic "Pondus" (downloadVg "pondus")
@@ -150,11 +206,12 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
 
         do! downloadComic "Lunch TU" (downloadTU "lunch")
 
-        do! downloadComic "XKCD" (downloadXkcd ())
+        do! downloadComicWithCaption "XKCD" (downloadXkcd ())
 
         do! downloadComic "Lunch E24" (downloadUrl "https://api.e24.no/content/v1/comics/{0:yyyy}-{0:MM}-{0:dd}")
 
         //do! downloadComic "Calvin and Hobbes" (downloadRss "https://www.comicsrss.com/rss/calvinandhobbes.rss")
+        do! downloadComicWithCaption "The Far Side" (downloadFarSide ())
         do! downloadComic "Swords" (downloadRss "https://swordscomic.com/comic/feed/")
         logger.LogInformation("Comic download batch completed")
     }
