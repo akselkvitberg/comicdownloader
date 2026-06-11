@@ -1,0 +1,67 @@
+package main
+
+import "testing"
+
+func TestDetectContentType(t *testing.T) {
+	cases := []struct {
+		name   string
+		header []byte
+		want   string
+	}{
+		{"jpeg", []byte{0xFF, 0xD8, 0x00, 0x00}, "image/jpeg"},
+		{"png", []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, "image/png"},
+		{"gif", []byte{0x47, 0x49, 0x46, 0x38, 0x39, 0x61}, "image/gif"},
+		{"bmp", []byte{0x42, 0x4D, 0x00, 0x00}, "image/bmp"},
+		{"unknown", []byte{0x00, 0x01, 0x02, 0x03}, "application/octet-stream"},
+	}
+	for _, c := range cases {
+		if got := detectContentType(c.header); got != c.want {
+			t.Errorf("%s: got %q; want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestExtFromContentType(t *testing.T) {
+	cases := []struct{ ct, want string }{
+		{"image/jpeg", ".jpg"},
+		{"image/png", ".png"},
+		{"image/gif", ".gif"},
+		{"image/bmp", ".bmp"},
+		{"application/octet-stream", ".bin"},
+	}
+	for _, c := range cases {
+		if got := extFromContentType(c.ct); got != c.want {
+			t.Errorf("extFromContentType(%q) = %q; want %q", c.ct, got, c.want)
+		}
+	}
+}
+
+func TestHashImagePixelsDeterministic(t *testing.T) {
+	// Minimal valid 1x1 white PNG (generated with image/png encoder)
+	png1x1 := []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+		0xde, 0x00, 0x00, 0x00, 0x10, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9c, 0x62, 0xfa, 0xff, 0xff, 0x3f,
+		0x20, 0x00, 0x00, 0xff, 0xff, 0x06, 0x06, 0x03,
+		0x00, 0xb7, 0x66, 0x11, 0x21, 0x00, 0x00, 0x00,
+		0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60,
+		0x82,
+	}
+	h1, err := hashImagePixels(png1x1)
+	if err != nil {
+		t.Fatalf("hashImagePixels: %v", err)
+	}
+	h2, err := hashImagePixels(png1x1)
+	if err != nil {
+		t.Fatalf("hashImagePixels: %v", err)
+	}
+	if h1 != h2 {
+		t.Errorf("not deterministic: %q != %q", h1, h2)
+	}
+	if h1 == "" {
+		t.Error("empty hash")
+	}
+}
