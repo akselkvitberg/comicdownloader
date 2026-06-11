@@ -1,6 +1,6 @@
 # Comic Downloader
 
-Comic Downloader is an F# ASP.NET Core service that downloads comics on a schedule, stores downloaded images in Google Cloud Storage, keeps secrets and configuration in Secret Manager, uploads new images to OneDrive, and sends them to Telegram.
+Comic Downloader is a Go service that downloads comics on a schedule, stores downloaded images in Google Cloud Storage, keeps secrets and configuration in Secret Manager, uploads new images to OneDrive, and sends them to Telegram.
 
 ## Endpoints
 
@@ -13,13 +13,13 @@ These job endpoints are intended to be invoked by Cloud Scheduler through an aut
 ## Build
 
 ```powershell
-dotnet build
+go build ./...
 ```
 
-## Publish Container Image
+## Build Container Image
 
 ```powershell
-dotnet publish .\comicdownloader.fsproj -t:PublishContainer -p:ContainerArchiveOutputPath=bin/Release/net10.0/comicdownloader-image.tar.gz
+docker build -t comicdownloader .
 ```
 
 ## Bootstrap GCP Locally

@@ -111,4 +111,4 @@ if (-not [string]::IsNullOrWhiteSpace($SecretPrefix) -and $SecretPrefix -ne "com
     Write-Host ('$env:COMICDOWNLOADER_SECRET_PREFIX="{0}"' -f $SecretPrefix)
 }
 
-Write-Host 'dotnet run --project .\comicdownloader.fsproj'
+Write-Host 'go run .'

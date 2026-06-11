@@ -3,22 +3,14 @@
     "configurations": [
         {
             "name": "Launch Comic Downloader",
-            "type": "coreclr",
+            "type": "go",
             "request": "launch",
-            "preLaunchTask": "build",
-            "program": "${workspaceFolder}/bin/Debug/net10.0/comicdownloader.dll",
-            "args": [],
+            "mode": "auto",
+            "program": "${workspaceFolder}",
             "cwd": "${workspaceFolder}",
-            "stopAtEntry": false,
-            "console": "internalConsole",
             "env": {
-                "ASPNETCORE_URLS": "http://127.0.0.1:8080"
+                "PORT": "8080"
             }
-        },
-        {
-            "name": "Attach to Comic Downloader",
-            "type": "coreclr",
-            "request": "attach"
         }
     ]
 }
