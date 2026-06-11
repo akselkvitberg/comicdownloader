@@ -58,7 +58,10 @@ func UploadToOneDrive(accessToken, folderName, fileName string, data []byte) err
 
 func simpleUpload(accessToken, folderName, fileName string, data []byte) error {
 	u := fmt.Sprintf("%s/me/drive/special/approot:/%s/%s:/content", graphAPIURL, folderName, fileName)
-	req, _ := http.NewRequest("PUT", u, bytes.NewReader(data))
+	req, err := http.NewRequest("PUT", u, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("simple upload request: %w", err)
+	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	resp, err := http.DefaultClient.Do(req)
@@ -75,7 +78,10 @@ func simpleUpload(accessToken, folderName, fileName string, data []byte) error {
 
 func chunkedUpload(accessToken, folderName, fileName string, data []byte) error {
 	sessionURL := fmt.Sprintf("%s/me/drive/special/approot:/%s/%s:/createUploadSession", graphAPIURL, folderName, fileName)
-	req, _ := http.NewRequest("POST", sessionURL, strings.NewReader(`{"item":{"@microsoft.graph.conflictBehavior":"replace"}}`))
+	req, err := http.NewRequest("POST", sessionURL, strings.NewReader(`{"item":{"@microsoft.graph.conflictBehavior":"replace"}}`))
+	if err != nil {
+		return fmt.Errorf("create session request: %w", err)
+	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -96,13 +102,17 @@ func chunkedUpload(accessToken, folderName, fileName string, data []byte) error 
 			end = total
 		}
 		chunk := data[offset:end]
-		chunkReq, _ := http.NewRequest("PUT", session.UploadURL, bytes.NewReader(chunk))
+		chunkReq, err := http.NewRequest("PUT", session.UploadURL, bytes.NewReader(chunk))
+		if err != nil {
+			return fmt.Errorf("chunk request at %d: %w", offset, err)
+		}
 		chunkReq.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, end-1, total))
 		chunkReq.Header.Set("Content-Type", "application/octet-stream")
 		chunkResp, err := http.DefaultClient.Do(chunkReq)
 		if err != nil {
 			return fmt.Errorf("upload chunk at %d: %w", offset, err)
 		}
+		io.Copy(io.Discard, chunkResp.Body)
 		chunkResp.Body.Close()
 		if chunkResp.StatusCode >= 400 {
 			return fmt.Errorf("upload chunk %d: status %d", offset, chunkResp.StatusCode)
