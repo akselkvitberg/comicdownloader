@@ -83,18 +83,16 @@ function Publish-ContainerImage {
     param([string]$ImageName)
 
     $registryHost = "$Region-docker.pkg.dev"
-
     Invoke-GCloud auth configure-docker $registryHost --quiet
 
-    & dotnet publish .\comicdownloader.fsproj `
-        --configuration Release `
-        -t:PublishContainer `
-        "-p:ContainerRegistry=$registryHost" `
-        "-p:ContainerRepository=$ProjectId/$ArtifactRegistryRepository/$ServiceName" `
-        "-p:ContainerImageTag=$ImageTag"
-
+    & docker build -t $ImageName .
     if ($LASTEXITCODE -ne 0) {
-        throw "dotnet container publish failed for image '$ImageName'"
+        throw "docker build failed for image '$ImageName'"
+    }
+
+    & docker push $ImageName
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker push failed for image '$ImageName'"
     }
 }
 
@@ -143,7 +141,7 @@ function Ensure-SchedulerJob {
 }
 
 Require-Command gcloud
-Require-Command dotnet
+Require-Command docker
 
 Invoke-GCloud config set project $ProjectId
 Ensure-ArtifactRegistryRepository
