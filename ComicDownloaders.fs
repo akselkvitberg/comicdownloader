@@ -96,6 +96,33 @@ let downloadFarSide (httpClient: HttpClient) =
             return None, None
     }
 
+let downloadSlackWyrm (httpClient: HttpClient) =
+    task {
+        let pageUrl = "https://joshuawright.net/"
+
+        use request = new HttpRequestMessage(HttpMethod.Get, pageUrl)
+        request.Headers.UserAgent.ParseAdd("Mozilla/5.0")
+
+        let! response = httpClient.SendAsync(request)
+        response.EnsureSuccessStatusCode() |> ignore
+
+        let! html = response.Content.ReadAsStringAsync()
+
+        let comicImage =
+            Regex.Match(
+                html,
+                "src=\"(images/picture%20-%20slackwyrm%20\\d+\\.[^\"?]+(?:\\?[^\"]*)?)\"",
+                RegexOptions.IgnoreCase
+            )
+
+        if comicImage.Success then
+            let imageUrl = Uri(Uri(pageUrl), comicImage.Groups[1].Value).AbsoluteUri
+            let! bytes = downloadUrl httpClient imageUrl
+            return bytes, None
+        else
+            return raise (InvalidOperationException($"No Slack Wyrm image URL was found at {pageUrl}"))
+    }
+
 let downloadComicsKingdom (httpClient: HttpClient) (comic: string) =
     task {
         let date = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
