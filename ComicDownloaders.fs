@@ -7,6 +7,7 @@ open System.Net.Http.Json
 open System.Text.Json
 open System.Xml.Linq
 open System.Text.RegularExpressions
+open System.Globalization
 open Microsoft.Extensions.Logging
 
 let downloadUrl (httpClient: HttpClient) (url: string) =
@@ -93,6 +94,35 @@ let downloadFarSide (httpClient: HttpClient) =
             return bytes, caption
         else
             return None, None
+    }
+
+let downloadComicsKingdom (httpClient: HttpClient) (comic: string) =
+    task {
+        let date = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+        let pageUrl = $"https://comicskingdom.com/{comic}/{date}"
+
+        use request = new HttpRequestMessage(HttpMethod.Get, pageUrl)
+        request.Headers.UserAgent.ParseAdd("Mozilla/5.0")
+
+        let! response = httpClient.SendAsync(request)
+        response.EnsureSuccessStatusCode() |> ignore
+
+        let! html = response.Content.ReadAsStringAsync()
+        let pattern =
+            sprintf
+                "title=%s&amp;url=%%2F%s%%2F%s&amp;img=(https%%3A%%2F%%2F[^\"' ]+)"
+                (Regex.Escape(date))
+                (Regex.Escape(comic))
+                (Regex.Escape(date))
+
+        let imageUrlMatch = Regex.Match(html, pattern)
+
+        if imageUrlMatch.Success then
+            let imageUrl = Uri.UnescapeDataString(imageUrlMatch.Groups[1].Value)
+            let! bytes = downloadUrl httpClient imageUrl
+            return bytes, None
+        else
+            return raise (InvalidOperationException($"No Comics Kingdom image URL was found at {pageUrl}"))
     }
 
 let downloadCalvinAndHobbes (storageContext: StorageContext.Context) =

@@ -112,6 +112,8 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
 
         do! downloadComic "The Far Side" (downloadFarSide httpClient)
 
+        do! downloadComic "Bizarro" (downloadComicsKingdom httpClient "bizarro")
+
         do! downloadComic "Swords" (downloadRss httpClient "https://swordscomic.com/comic/feed/")
         
         logger.LogInformation("Comic download batch completed")
