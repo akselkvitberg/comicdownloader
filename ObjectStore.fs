@@ -12,6 +12,15 @@ let load container path (context: StorageContext.Context) =
     with ex when StorageContext.isNotFound ex ->
         None
 
+let loadBinary bucketName objectName (context: StorageContext.Context) =
+    try
+        use stream = new MemoryStream()
+        context.StorageClient.DownloadObject(bucketName, objectName, stream)
+        |> ignore
+        stream.ToArray() |> Some
+    with ex when StorageContext.isNotFound ex ->
+        None
+
 let exists container path (context: StorageContext.Context) =
     try
         context.StorageClient.GetObject(context.BucketName, StorageContext.objectName container path) |> ignore

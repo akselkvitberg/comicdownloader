@@ -20,6 +20,10 @@ param(
 
     [string]$SecretPrefix = "comicdownloader-",
 
+    [string]$CalvinHobbesSourceBucket = "calvin-and-hobbes-342ndf3",
+
+    [string]$OtlpTracesEndpoint,
+
     [string]$DownloadSchedule = "0 */5 * * *",
 
     [string]$RefreshSchedule = "0 0 * * *",
@@ -160,13 +164,27 @@ $schedulerServiceAccount = Ensure-ServiceAccount -AccountName $SchedulerInvokerS
 Ensure-ProjectRoleBinding -Member "serviceAccount:$runtimeServiceAccount" -Role "roles/secretmanager.secretAccessor"
 Ensure-BucketRoleBinding -Member "serviceAccount:$runtimeServiceAccount" -Role "roles/storage.objectAdmin"
 
+$envVars = @(
+    "GCP_PROJECT_ID=$ProjectId",
+    "GCS_BUCKET_NAME=$BucketName",
+    "COMICDOWNLOADER_SECRET_PREFIX=$SecretPrefix"
+)
+
+if ($OtlpTracesEndpoint) {
+    $envVars += "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=$OtlpTracesEndpoint"
+}
+
+if ($CalvinHobbesSourceBucket) {
+    $envVars += "CALVIN_HOBBES_SOURCE_BUCKET=$CalvinHobbesSourceBucket"
+}
+
 $deployArgs = @(
     "run", "deploy", $ServiceName,
     "--project", $ProjectId,
     "--region", $Region,
     "--image", $imageName,
     "--service-account", $runtimeServiceAccount,
-    "--set-env-vars", "GCP_PROJECT_ID=$ProjectId,GCS_BUCKET_NAME=$BucketName,COMICDOWNLOADER_SECRET_PREFIX=$SecretPrefix",
+    "--set-env-vars", ($envVars -join ","),
     "--no-allow-unauthenticated"
 )
 

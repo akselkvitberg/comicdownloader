@@ -14,6 +14,7 @@ type Context = {
     ProjectId: string
     BucketName: string
     SecretPrefix: string
+    CalvinAndHobbesBucketName: string option
 }
 
 let normalize (name: string) =

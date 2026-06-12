@@ -9,10 +9,15 @@
     <ContainerBaseImage>mcr.microsoft.com/dotnet/aspnet:10.0</ContainerBaseImage>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Google.Cloud.Logging.Console" Version="1.6.0" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Google.Cloud.SecretManager.V1" Version="2.7.0" />
     <PackageReference Include="Google.Cloud.Storage.V1" Version="4.15.0" />
     <PackageReference Include="Microsoft.Graph" Version="6.2.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageReference Include="Telegram.Bot" Version="22.10.0.1" />
   </ItemGroup>
@@ -32,6 +37,7 @@
     </None>
     <Compile Include="OneDrive.fs" />
     <Compile Include="Telegram.fs" />
+    <Compile Include="ComicDownloaders.fs" />
     <Compile Include="Download.fs" />
     <Compile Include="TimedDownload.fs" />
     <Compile Include="Program.fs" />

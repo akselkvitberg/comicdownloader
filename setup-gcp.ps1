@@ -10,7 +10,9 @@ param(
 
     [string]$SecretPrefix = "comicdownloader-",
 
-    [string]$VgCookie,
+    [string]$CalvinHobbesSourceBucket,
+
+    [string]$CalvinHobbesSourcePrefix = "sources/calvin-and-hobbes/",
 
     [string]$OneDriveClientId,
 
@@ -76,7 +78,18 @@ else {
     Write-Host "Bucket '$bucketUri' already exists."
 }
 
-Ensure-Secret -Name (Get-SecretName "settings-vgcookie") -Value $VgCookie
+if (-not [string]::IsNullOrWhiteSpace($CalvinHobbesSourceBucket)) {
+    $calvinBucketUri = "gs://$CalvinHobbesSourceBucket"
+    $calvinBucketExists = gcloud storage buckets describe $calvinBucketUri --project $ProjectId 2>$null
+
+    if ($LASTEXITCODE -ne 0) {
+        gcloud storage buckets create $calvinBucketUri --project $ProjectId --location $Location | Out-Null
+        Write-Host "Created Calvin and Hobbes source bucket '$calvinBucketUri' in '$Location'."
+    }
+    else {
+        Write-Host "Calvin and Hobbes source bucket '$calvinBucketUri' already exists."
+    }
+}
 
 if (-not [string]::IsNullOrWhiteSpace($OneDriveClientId) -and -not [string]::IsNullOrWhiteSpace($OneDriveRefreshToken)) {
     $oneDrivePayload = @{
@@ -109,6 +122,11 @@ Write-Host ('$env:GCS_BUCKET_NAME="{0}"' -f $BucketName)
 
 if (-not [string]::IsNullOrWhiteSpace($SecretPrefix) -and $SecretPrefix -ne "comicdownloader-") {
     Write-Host ('$env:COMICDOWNLOADER_SECRET_PREFIX="{0}"' -f $SecretPrefix)
+}
+
+if (-not [string]::IsNullOrWhiteSpace($CalvinHobbesSourceBucket)) {
+    Write-Host ('$env:CALVIN_HOBBES_SOURCE_BUCKET="{0}"' -f $CalvinHobbesSourceBucket)
+    Write-Host ('$env:CALVIN_HOBBES_SOURCE_PREFIX="{0}"' -f $CalvinHobbesSourcePrefix)
 }
 
 Write-Host 'dotnet run --project .\comicdownloader.fsproj'
