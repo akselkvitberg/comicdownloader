@@ -149,7 +149,7 @@ let downloadComicsKingdom (httpClient: HttpClient) (comic: string) =
             let! bytes = downloadUrl httpClient imageUrl
             return bytes, None
         else
-            return raise (InvalidOperationException($"No Comics Kingdom image URL was found at {pageUrl}"))
+            return None, None
     }
 
 let downloadCalvinAndHobbes (storageContext: StorageContext.Context) =
