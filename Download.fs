@@ -114,6 +114,8 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
 
         do! downloadComic "SlackWyrm" (downloadSlackWyrm httpClient)
 
+        do! downloadComic "Absurdgalleriet" (downloadAbsurdgalleriet httpClient)
+
         do! downloadComic "Bizarro" (downloadComicsKingdom httpClient "bizarro")
 
         do! downloadComic "Swords" (downloadRss httpClient "https://swordscomic.com/comic/feed/")

@@ -123,6 +123,60 @@ let downloadSlackWyrm (httpClient: HttpClient) =
             return raise (InvalidOperationException($"No Slack Wyrm image URL was found at {pageUrl}"))
     }
 
+let downloadAbsurdgalleriet (httpClient: HttpClient) =
+    task {
+        let indexUrl = "https://www.abcnyheter.no/tegneserie"
+
+        use indexRequest = new HttpRequestMessage(HttpMethod.Get, indexUrl)
+        indexRequest.Headers.UserAgent.ParseAdd("Mozilla/5.0")
+
+        let! indexResponse = httpClient.SendAsync(indexRequest)
+        indexResponse.EnsureSuccessStatusCode() |> ignore
+
+        let! indexHtml = indexResponse.Content.ReadAsStringAsync()
+
+        // The index lists comics newest-first; the first article link is today's comic.
+        let latestMatch =
+            Regex.Match(indexHtml, "href=\"(https://www\\.abcnyheter\\.no/tegneserie/[^\"/]+/\\d+)\"")
+
+        if not latestMatch.Success then
+            return raise (InvalidOperationException($"No comic link was found at {indexUrl}"))
+        else
+            let comicUrl = latestMatch.Groups[1].Value
+
+            use comicRequest = new HttpRequestMessage(HttpMethod.Get, comicUrl)
+            comicRequest.Headers.UserAgent.ParseAdd("Mozilla/5.0")
+
+            let! comicResponse = httpClient.SendAsync(comicRequest)
+            comicResponse.EnsureSuccessStatusCode() |> ignore
+
+            let! comicHtml = comicResponse.Content.ReadAsStringAsync()
+
+            let imageMatch =
+                Regex.Match(comicHtml, "<meta[^>]*property=\"og:image\"[^>]*content=\"([^\"]+)\"")
+
+            if not imageMatch.Success then
+                return raise (InvalidOperationException($"No image URL was found at {comicUrl}"))
+            else
+                let imageUrl = WebUtility.HtmlDecode(imageMatch.Groups[1].Value)
+
+                // The full comic text lives in the single-line <h2>. The og:title masks the
+                // punchline word with "***", so it must not be used as the caption.
+                let captionMatch =
+                    Regex.Match(comicHtml, "<h2[^>]*\\bsingleline\\b[^>]*>(.*?)</h2", RegexOptions.Singleline)
+
+                let caption =
+                    if captionMatch.Success then
+                        match WebUtility.HtmlDecode(captionMatch.Groups[1].Value).Trim() with
+                        | "" -> None
+                        | value -> Some value
+                    else
+                        None
+
+                let! bytes = downloadUrl httpClient imageUrl
+                return bytes, caption
+    }
+
 let downloadComicsKingdom (httpClient: HttpClient) (comic: string) =
     task {
         let date = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
