@@ -35,8 +35,8 @@ let printResult refreshToken =
     printfn "OneDrive settings JSON for settings/onedrive:"
     printfn "%s" json
     printfn ""
-    printfn "setup-gcp.ps1 arguments:"
-    printfn "-OneDriveClientId %s -OneDriveRefreshToken %s" clientId refreshToken
+    printfn "Seed the secret with (PowerShell):"
+    printfn "'%s' | gcloud secrets versions add comicdownloader-settings-onedrive --data-file=-" (JsonSerializer.Serialize(settings))
 
 let writeCallbackResponse (context: HttpListenerContext) (statusCode: int) (html: string) =
     task {

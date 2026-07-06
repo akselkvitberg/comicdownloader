@@ -24,47 +24,22 @@ dotnet build
 dotnet publish .\comicdownloader.fsproj -t:PublishContainer -p:ContainerArchiveOutputPath=bin/Release/net10.0/comicdownloader-image.tar.gz
 ```
 
-## Bootstrap GCP Locally
+## Infrastructure and Deployment
 
-Use the setup script to create the bucket, create or update the required secrets, and print the env vars for local execution:
+Infrastructure is managed with Terraform under [`infra/`](infra/), and deployment
+is fully automated with GitHub Actions ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)).
+Every push to `master` builds the container image, pins it by digest, and runs
+`terraform apply` to update Cloud Run, IAM, Secret Manager containers, and the
+two Cloud Scheduler jobs.
 
-```powershell
-.\setup-gcp.ps1 -ProjectId YOUR_PROJECT_ID -BucketName YOUR_BUCKET_NAME
-```
+GitHub Actions authenticates to GCP keylessly via Workload Identity Federation —
+no service-account key is stored.
 
-You can also pass secret values directly when bootstrapping:
+### First-time setup
 
-```powershell
-.\setup-gcp.ps1 \
-	-ProjectId YOUR_PROJECT_ID \
-	-BucketName YOUR_BUCKET_NAME \
-	-CalvinHobbesSourceBucket YOUR_SOURCE_BUCKET \
-	-OneDriveClientId YOUR_ONEDRIVE_CLIENT_ID \
-	-OneDriveRefreshToken YOUR_ONEDRIVE_REFRESH_TOKEN \
-	-TelegramApiKey YOUR_TELEGRAM_BOT_KEY \
-	-TelegramUser YOUR_TELEGRAM_USER
-```
-
-## Deploy to Cloud Run
-
-Use the deployment script to publish the SDK-built container image to Artifact Registry, deploy Cloud Run, grant the runtime and scheduler IAM bindings, and create or update the two Cloud Scheduler jobs:
-
-```powershell
-.\deploy-gcp.ps1 -ProjectId YOUR_PROJECT_ID -BucketName YOUR_BUCKET_NAME
-```
-
-Useful options:
-
-```powershell
-.\deploy-gcp.ps1 \
-	-ProjectId YOUR_PROJECT_ID \
-	-BucketName YOUR_BUCKET_NAME \
-	-Region europe-west1 \
-	-ArtifactRegistryRepository comicdownloader \
-	-ServiceName comicdownloader \
-	-SecretPrefix comicdownloader- \
-	-OtlpTracesEndpoint https://YOUR_COLLECTOR_OR_BACKEND:4317
-```
+The one-time bootstrap (state bucket, initial image, secret seeding, GitHub
+repository variables) is documented in [`bootstrap/README.md`](bootstrap/README.md).
+After bootstrap, deployments require no local scripts.
 
 ## Configuration
 
@@ -108,15 +83,11 @@ Example upload command:
 gcloud storage cp .\calvin\* gs://YOUR_SOURCE_BUCKET/sources/calvin-and-hobbes/
 ```
 
-Example deployment with the source enabled:
-
-```powershell
-.\deploy-gcp.ps1 \
-	-ProjectId YOUR_PROJECT_ID \
-	-BucketName YOUR_APP_BUCKET \
-	-CalvinHobbesSourceBucket YOUR_SOURCE_BUCKET \
-	-CalvinHobbesSourcePrefix sources/calvin-and-hobbes/
-```
+To enable the source, set `calvin_hobbes_source_bucket` (and optionally
+`calvin_hobbes_source_prefix`) in `infra/terraform.tfvars`. Terraform creates the
+bucket, grants the runtime service account read access, and wires the
+`CALVIN_HOBBES_SOURCE_BUCKET` / `CALVIN_HOBBES_SOURCE_PREFIX` environment
+variables into the Cloud Run service.
 
 ## Object Layout
 

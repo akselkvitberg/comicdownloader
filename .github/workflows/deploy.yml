@@ -1,0 +1,82 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Required for Workload Identity Federation (keyless auth).
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: europe-west1
+  SERVICE_NAME: comicdownloader
+  ARTIFACT_REPO: comicdownloader
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build and push container image
+        id: image
+        env:
+          REGISTRY: ${{ env.REGION }}-docker.pkg.dev
+          REPO_PATH: ${{ vars.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME }}
+          TAG: ${{ github.sha }}
+        run: |
+          dotnet publish ./comicdownloader.fsproj \
+            --configuration Release \
+            -t:PublishContainer \
+            -p:ContainerRegistry="$REGISTRY" \
+            -p:ContainerRepository="$REPO_PATH" \
+            -p:ContainerImageTag="$TAG"
+
+          # Resolve the immutable digest so Cloud Run is pinned exactly.
+          DIGEST=$(gcloud artifacts docker images describe \
+            "$REGISTRY/$REPO_PATH:$TAG" \
+            --format='value(image_summary.digest)')
+          echo "image=$REGISTRY/$REPO_PATH@$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init
+        working-directory: infra
+        run: terraform init -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: Terraform apply
+        working-directory: infra
+        run: |
+          terraform apply -auto-approve \
+            -var="project_id=${{ vars.GCP_PROJECT_ID }}" \
+            -var="app_bucket_name=${{ vars.APP_BUCKET_NAME }}" \
+            -var="calvin_hobbes_source_bucket=${{ vars.CALVIN_HOBBES_SOURCE_BUCKET }}" \
+            -var="github_repository=${{ github.repository }}" \
+            -var="image=${{ steps.image.outputs.image }}"
