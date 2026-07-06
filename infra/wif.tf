@@ -25,18 +25,22 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   workload_identity_pool_provider_id = "github-provider"
   display_name                       = "GitHub Actions Provider"
 
-  # Maps claims from GitHub's OIDC token into GCP attributes. The repository
-  # claim is surfaced as attribute.repository so it can be used both in the
-  # condition below and in the impersonation binding's principalSet.
+  # Maps claims from GitHub's OIDC token into GCP attributes. repository is used
+  # in the condition below and in the impersonation binding's principalSet; ref
+  # is mapped so the condition can also pin the branch (see attribute_condition).
   attribute_mapping = {
     "google.subject"       = "assertion.sub"
     "attribute.repository" = "assertion.repository"
+    "attribute.ref"        = "assertion.ref"
   }
 
-  # Critical security gate: rejects any token whose repository claim isn't this
-  # exact repo. Without it, ANY GitHub repo's workflow could exchange a token
-  # against this provider. This is the line that pins trust to one repository.
-  attribute_condition = "assertion.repository == \"${var.github_repository}\""
+  # Critical security gate: a token is only accepted if it comes from this exact
+  # repo AND from a workflow running on the deploy branch. Repo-only scoping is
+  # not enough — the deployer SA this unlocks is near-omnipotent, so without the
+  # ref check ANY workflow in the repo (a PR, a pushed feature branch) could mint
+  # a token and assume it. deploy.yml only deploys on push to master, so pinning
+  # ref to refs/heads/master matches the real deploy path and closes that gap.
+  attribute_condition = "assertion.repository == \"${var.github_repository}\" && assertion.ref == \"refs/heads/${var.deploy_branch}\""
 
   # Tells GCP whose tokens to validate — GitHub Actions' OIDC issuer.
   oidc {

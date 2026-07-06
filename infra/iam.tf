@@ -81,15 +81,42 @@ resource "google_cloud_run_v2_service_iam_member" "scheduler_invoker" {
 # artifactregistry.writer (image push), cloudscheduler.admin (scheduler),
 # secretmanager.admin (secrets), storage.admin (buckets), the iam/resourcemanager
 # roles (SAs, WIF, IAM bindings), and serviceusage (enabling APIs).
+# Custom role letting the deployer manage secret CONTAINERS and their IAM, but
+# NOT read secret values. roles/secretmanager.admin (previously used) includes
+# secretmanager.versions.access, which would let anyone able to run a deploy read
+# the OneDrive/Telegram secrets. Terraform only ever creates/updates the secret
+# resources and their IAM (never versions — those are seeded and rotated out of
+# band), so these container-scoped permissions are all it needs.
+resource "google_project_iam_custom_role" "deployer_secret_manager" {
+  role_id     = "comicdownloaderDeployerSecretManager"
+  title       = "Comic Downloader Deployer - Secret Manager (no version access)"
+  description = "Manage secret containers and their IAM bindings without access to secret values."
+  permissions = [
+    "secretmanager.secrets.create",
+    "secretmanager.secrets.delete",
+    "secretmanager.secrets.get",
+    "secretmanager.secrets.list",
+    "secretmanager.secrets.update",
+    "secretmanager.secrets.getIamPolicy",
+    "secretmanager.secrets.setIamPolicy",
+  ]
+}
+
 locals {
   deployer_project_roles = [
     "roles/run.admin",
     "roles/artifactregistry.writer",
     "roles/cloudscheduler.admin",
-    "roles/secretmanager.admin",
+    # secretmanager.admin intentionally omitted: replaced by the custom role
+    # above (deployer_secret_manager), granted separately, so CI cannot read
+    # secret values.
     "roles/storage.admin",
     "roles/iam.serviceAccountAdmin",
     "roles/iam.workloadIdentityPoolAdmin",
+    # Lets CI manage the custom Secret Manager role (deployer_secret_manager)
+    # on subsequent applies. Does not widen the blast radius: projectIamAdmin
+    # below can already self-grant any role, so role management is implied.
+    "roles/iam.roleAdmin",
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",
     # Required to deploy Cloud Run / Scheduler that run AS the other SAs.
@@ -106,5 +133,14 @@ resource "google_project_iam_member" "deployer" {
 
   project = var.project_id
   role    = each.value
+  member  = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+# Binds the value-less custom Secret Manager role to the deployer, replacing the
+# broad roles/secretmanager.admin so CI can manage secret containers without
+# being able to read their values.
+resource "google_project_iam_member" "deployer_secret_manager" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.deployer_secret_manager.id
   member  = "serviceAccount:${google_service_account.deployer.email}"
 }

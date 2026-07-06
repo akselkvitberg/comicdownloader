@@ -99,3 +99,13 @@ variable "github_repository" {
   type        = string
   description = "GitHub repository in 'owner/repo' form, allowed to authenticate via Workload Identity Federation."
 }
+
+# The branch CI is allowed to deploy from. Used to pin the WIF trust condition to
+# refs/heads/<deploy_branch>, so only workflow runs on this branch can mint a
+# token for the (highly privileged) deployer SA. Must match the branch that
+# actually triggers deploy.yml.
+variable "deploy_branch" {
+  type        = string
+  description = "Branch allowed to authenticate via WIF and deploy. Must match deploy.yml's trigger."
+  default     = "master"
+}
