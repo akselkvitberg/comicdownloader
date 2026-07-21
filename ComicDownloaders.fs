@@ -96,6 +96,21 @@ let downloadFarSide (httpClient: HttpClient) =
             return None, None
     }
 
+// Extracts the relative comic image paths from the Slack Wyrm landing page,
+// preserving page order and dropping the duplicate <img> tags the page emits.
+// A single strip can be published as multiple parts whose filenames carry a
+// trailing letter (e.g. "slackwyrm 1572a.jpg", "slackwyrm 1572b.jpg"), so the
+// number may be followed by an optional letter suffix.
+let extractSlackWyrmImageUrls (html: string) =
+    Regex.Matches(
+        html,
+        "src=\"(images/picture%20-%20slackwyrm%20\\d+[a-z]?\\.[^\"?]+(?:\\?[^\"]*)?)\"",
+        RegexOptions.IgnoreCase
+    )
+    |> Seq.map (fun m -> m.Groups[1].Value)
+    |> Seq.distinct
+    |> Seq.toList
+
 let downloadSlackWyrm (httpClient: HttpClient) =
     task {
         let pageUrl = "https://joshuawright.net/"
@@ -108,19 +123,20 @@ let downloadSlackWyrm (httpClient: HttpClient) =
 
         let! html = response.Content.ReadAsStringAsync()
 
-        let comicImage =
-            Regex.Match(
-                html,
-                "src=\"(images/picture%20-%20slackwyrm%20\\d+\\.[^\"?]+(?:\\?[^\"]*)?)\"",
-                RegexOptions.IgnoreCase
-            )
+        match extractSlackWyrmImageUrls html with
+        | [] -> return raise (InvalidOperationException($"No Slack Wyrm image URL was found at {pageUrl}"))
+        | relativeUrls ->
+            let images = ResizeArray<byte array * string option>()
 
-        if comicImage.Success then
-            let imageUrl = Uri(Uri(pageUrl), comicImage.Groups[1].Value).AbsoluteUri
-            let! bytes = downloadUrl httpClient imageUrl
-            return bytes, None
-        else
-            return raise (InvalidOperationException($"No Slack Wyrm image URL was found at {pageUrl}"))
+            for relativeUrl in relativeUrls do
+                let imageUrl = Uri(Uri(pageUrl), relativeUrl).AbsoluteUri
+                let! bytes = downloadUrl httpClient imageUrl
+
+                match bytes with
+                | Some bytes -> images.Add(bytes, None)
+                | None -> ()
+
+            return List.ofSeq images
     }
 
 let downloadAbsurdgalleriet (httpClient: HttpClient) =

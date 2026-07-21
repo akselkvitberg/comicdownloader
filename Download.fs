@@ -54,6 +54,35 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
         Option.isSome telegramSettings
     )
 
+    let processImage comicName (bytes: byte array) (caption: string option) =
+        task {
+            logger.LogInformation("Downloaded {ByteCount} bytes for {ComicName}", [| box bytes.Length; box comicName |])
+            let fileName = getFileName bytes
+            let hash = getHash comicName bytes
+
+            if BlobClient.exists comicName hash storageContext then
+                logger.LogInformation("Skipping {ComicName} because hash {Hash} already exists", [| box comicName; box hash |])
+                ()
+            else
+                logger.LogInformation("New comic detected for {ComicName}; writing filename {FileName} with hash {Hash}", [| box comicName; box fileName; box hash |])
+
+                let! oneDriveResult = OneDrive.uploadFile logger oneDriveSettings comicName fileName bytes
+
+                match oneDriveResult with
+                | Ok _ -> logger.LogInformation("OneDrive upload succeeded for {ComicName}", [| box comicName |])
+                | Error error -> logger.LogWarning(error, "OneDrive upload returned an error for {ComicName}", [| box comicName |])
+
+                let! telegramResult = Telegram.sendMessage logger telegramSettings bytes caption
+
+                match telegramResult with
+                | Ok _ -> logger.LogInformation("Telegram image send succeeded for {ComicName}", [| box comicName |])
+                | Error error -> logger.LogWarning(error, "Telegram image send returned an error for {ComicName}", [| box comicName |])
+
+                BlobClient.storeBinary comicName hash bytes storageContext |> ignore
+                logger.LogInformation("Stored {ComicName} bytes in object storage under hash {Hash}", [| box comicName; box hash |])
+                ()
+        }
+
     let downloadComic comicName (downloadFunction: Task<byte array option * string option>) =
         task {
             try
@@ -64,32 +93,30 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
                 | None ->
                     logger.LogInformation("Skipping {ComicName} because the source returned no image", [| box comicName |])
                 | Some bytes ->
+                    do! processImage comicName bytes caption
+            with exn ->
+                logger.LogError(exn, "Could not download {ComicName}", comicName)
 
-                    logger.LogInformation("Downloaded {ByteCount} bytes for {ComicName}", [| box bytes.Length; box comicName |])
-                    let fileName = getFileName bytes
-                    let hash = getHash comicName bytes
+                let! _ =
+                    Telegram.sendText logger telegramSettings (formatDownloadError comicName exn)
 
-                    if BlobClient.exists comicName hash storageContext then
-                        logger.LogInformation("Skipping {ComicName} because hash {Hash} already exists", [| box comicName; box hash |])
-                        ()
-                    else
-                        logger.LogInformation("New comic detected for {ComicName}; writing filename {FileName} with hash {Hash}", [| box comicName; box fileName; box hash |])
+                ()
+        }
 
-                        let! oneDriveResult = OneDrive.uploadFile logger oneDriveSettings comicName fileName bytes
+    // Variant for sources that publish a single strip as multiple images (parts).
+    // Each part is processed independently: deduped, stored, and sent on its own.
+    let downloadComicMulti comicName (downloadFunction: Task<(byte array * string option) list>) =
+        task {
+            try
+                logger.LogInformation("Starting comic download for {ComicName}", [| box comicName |])
+                let! images = downloadFunction
 
-                        match oneDriveResult with
-                        | Ok _ -> logger.LogInformation("OneDrive upload succeeded for {ComicName}", [| box comicName |])
-                        | Error error -> logger.LogWarning(error, "OneDrive upload returned an error for {ComicName}", [| box comicName |])
-
-                        let! telegramResult = Telegram.sendMessage logger telegramSettings bytes caption
-
-                        match telegramResult with
-                        | Ok _ -> logger.LogInformation("Telegram image send succeeded for {ComicName}", [| box comicName |])
-                        | Error error -> logger.LogWarning(error, "Telegram image send returned an error for {ComicName}", [| box comicName |])
-
-                        BlobClient.storeBinary comicName hash bytes storageContext |> ignore
-                        logger.LogInformation("Stored {ComicName} bytes in object storage under hash {Hash}", [| box comicName; box hash |])
-                        ()
+                match images with
+                | [] ->
+                    logger.LogInformation("Skipping {ComicName} because the source returned no image", [| box comicName |])
+                | images ->
+                    for (bytes, caption) in images do
+                        do! processImage comicName bytes caption
             with exn ->
                 logger.LogError(exn, "Could not download {ComicName}", comicName)
 
@@ -112,7 +139,7 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
 
         do! downloadComic "The Far Side" (downloadFarSide httpClient)
 
-        do! downloadComic "SlackWyrm" (downloadSlackWyrm httpClient)
+        do! downloadComicMulti "SlackWyrm" (downloadSlackWyrm httpClient)
 
         do! downloadComic "Absurdgalleriet" (downloadAbsurdgalleriet httpClient)
 
