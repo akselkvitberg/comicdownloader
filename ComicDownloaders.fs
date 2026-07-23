@@ -69,33 +69,6 @@ let downloadRss (httpClient: HttpClient) (url: string) =
        return bytes, None
    }
 
-let downloadFarSide (httpClient: HttpClient) =
-    task {
-        let pageUrl = DateTime.Now.ToString("'https://www.thefarside.com/'yyyy'/'MM'/'dd")
-        use request = new HttpRequestMessage(HttpMethod.Get, pageUrl)
-        request.Headers.UserAgent.ParseAdd("Mozilla/5.0")
-
-        let! response = httpClient.SendAsync(request)
-        response.EnsureSuccessStatusCode() |> ignore
-
-        let! html = response.Content.ReadAsStringAsync()
-
-        let comics =
-            Regex.Match(
-                html,
-                "<div class=\"card tfs-comic js-comic\">.*?<img[^>]*data-src=\"(https://featureassets\\.amuniversal\\.com/assets/[^\"]+)\".*?<figcaption class=\"figure-caption\">(.*?)</figcaption>",
-                RegexOptions.Singleline
-            )
-
-        if comics.Success then
-            let imageUrl = comics.Groups[1].Value
-            let caption = comics.Groups[2].Value.Trim() |> function | "" -> None | value -> Some value
-            let! bytes = downloadUrl httpClient imageUrl
-            return bytes, caption
-        else
-            return None, None
-    }
-
 // Extracts the relative comic image paths from the Slack Wyrm landing page,
 // preserving page order and dropping the duplicate <img> tags the page emits.
 // A single strip can be published as multiple parts whose filenames carry a

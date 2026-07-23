@@ -137,8 +137,6 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
 
         do! downloadComic "Calvin and Hobbes" (downloadCalvinAndHobbes storageContext)
 
-        do! downloadComic "The Far Side" (downloadFarSide httpClient)
-
         do! downloadComicMulti "SlackWyrm" (downloadSlackWyrm httpClient)
 
         do! downloadComic "Absurdgalleriet" (downloadAbsurdgalleriet httpClient)
