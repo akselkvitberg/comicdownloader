@@ -79,4 +79,5 @@ jobs:
             -var="app_bucket_name=${{ vars.APP_BUCKET_NAME }}" \
             -var="calvin_hobbes_source_bucket=${{ vars.CALVIN_HOBBES_SOURCE_BUCKET }}" \
             -var="github_repository=${{ github.repository }}" \
+            -var="alert_email=${{ vars.ALERT_EMAIL }}" \
             -var="image=${{ steps.image.outputs.image }}"

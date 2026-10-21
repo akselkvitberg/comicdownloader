@@ -24,6 +24,7 @@ locals {
     "sts.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "serviceusage.googleapis.com",
+    "monitoring.googleapis.com",
   ]
 }
 

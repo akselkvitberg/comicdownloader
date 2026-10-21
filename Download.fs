@@ -91,7 +91,7 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
 
                 match bytes with
                 | None ->
-                    logger.LogInformation("Skipping {ComicName} because the source returned no image", [| box comicName |])
+                    logger.LogWarning("Skipping {ComicName} because the source returned no image", [| box comicName |])
                 | Some bytes ->
                     do! processImage comicName bytes caption
             with exn ->
@@ -113,7 +113,7 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
 
                 match images with
                 | [] ->
-                    logger.LogInformation("Skipping {ComicName} because the source returned no image", [| box comicName |])
+                    logger.LogWarning("Skipping {ComicName} because the source returned no image", [| box comicName |])
                 | images ->
                     for (bytes, caption) in images do
                         do! processImage comicName bytes caption
@@ -128,8 +128,8 @@ let downloadImages (logger: ILogger) (storageContext: StorageContext.Context) =
 
     task {
         logger.LogInformation("Starting comic download batch")
-        do! downloadComic "Lunch TU" (downloadTU httpClient "lunch")
-        do! downloadComic "Dunce" (downloadTU httpClient "dunce")
+        do! downloadComic "Lunch TU" (downloadMentorMedier httpClient "tu.no" "lunch")
+        do! downloadComic "Dunce" (downloadMentorMedier httpClient "digi.no" "dunce")
 
         do! downloadComic "XKCD" (downloadXkcd httpClient)
 

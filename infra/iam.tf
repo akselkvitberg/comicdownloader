@@ -119,6 +119,9 @@ locals {
     "roles/iam.roleAdmin",
     "roles/resourcemanager.projectIamAdmin",
     "roles/serviceusage.serviceUsageAdmin",
+    # Alert policy and its email channel (monitoring.tf).
+    "roles/monitoring.alertPolicyEditor",
+    "roles/monitoring.notificationChannelEditor",
     # Required to deploy Cloud Run / Scheduler that run AS the other SAs.
     # Without serviceAccountUser, the deployer can't "act as" the runtime/
     # scheduler SAs, and creating those resources fails with a permission error.

@@ -95,6 +95,14 @@ variable "image" {
   description = "Fully-qualified container image to deploy, ideally pinned by digest. Supplied by CI."
 }
 
+# Empty string sentinel: when blank, no notification channel or alert policy is
+# created (see monitoring.tf).
+variable "alert_email" {
+  type        = string
+  description = "Email address that receives comic download failure alerts. Empty string disables alerting."
+  default     = ""
+}
+
 variable "github_repository" {
   type        = string
   description = "GitHub repository in 'owner/repo' form, allowed to authenticate via Workload Identity Federation."

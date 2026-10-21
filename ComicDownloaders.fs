@@ -10,26 +10,59 @@ open System.Text.RegularExpressions
 open System.Globalization
 open Microsoft.Extensions.Logging
 
+// Failures propagate to downloadComic, which logs them as errors and alerts.
+// Swallowing them here previously hid broken sources for weeks.
 let downloadUrl (httpClient: HttpClient) (url: string) =
     task {
         try
             let! bytes = httpClient.GetByteArrayAsync(url)
             return Some bytes
         with ex ->
-            printfn $"Failed to download {url}: {ex.Message}"
-            return None
+            return raise (HttpRequestException($"Failed to download {url}: {ex.Message}", ex))
     }
 
-let downloadTU (httpClient: HttpClient) (comic: string) =
+// tu.no and digi.no (Mentor Medier) list a comic's strips newest-first in a
+// JSON-LD ItemList on /tegneserier/{comic}. The image server rescales to any
+// requested width (upscaling too), so request the largest width the page itself
+// offers in its srcset rather than the 1200px JSON-LD thumbnail.
+let downloadMentorMedier (httpClient: HttpClient) (site: string) (comic: string) =
     task {
-        let url = $"https://www.tu.no/api/widgets/comics?name={comic}&date={DateTime.Now:``yyyy-MM-dd``}"
-        let! bytes = downloadUrl httpClient url
-        return bytes, None
+        let pageUrl = $"https://www.{site}/tegneserier/{comic}"
+
+        use request = new HttpRequestMessage(HttpMethod.Get, pageUrl)
+        request.Headers.UserAgent.ParseAdd("Mozilla/5.0")
+
+        let! response = httpClient.SendAsync(request)
+        response.EnsureSuccessStatusCode() |> ignore
+
+        let! html = response.Content.ReadAsStringAsync()
+
+        let latestMatch =
+            Regex.Match(
+                html,
+                $"\"url\":\"https://www\\.{Regex.Escape(site)}/tegneserie/{Regex.Escape(comic)}-[^\"]+\",\"image\":\"https://image\\.{Regex.Escape(site)}/(\\d+)\\.jpg"
+            )
+
+        if not latestMatch.Success then
+            return raise (InvalidOperationException($"No comic image was found at {pageUrl}"))
+        else
+            let imageId = latestMatch.Groups[1].Value
+
+            let width =
+                Regex.Matches(html, $"imageId={imageId}&[^\"]*?&width=(\\d+)")
+                |> Seq.map (fun m -> int m.Groups[1].Value)
+                |> Seq.fold max 1200
+
+            let imageUrl = $"https://image.{site}/{imageId}.jpg?imageId={imageId}&width={width}"
+            let! bytes = downloadUrl httpClient imageUrl
+            return bytes, None
     }
 
+// e24.no embeds Lunch from Strand Comics. A future date returns the latest strip,
+// so an early run just re-downloads yesterday's and is deduplicated by hash.
 let downloadE24 (httpClient: HttpClient) =
     task {
-        let url = $"https://api.e24.no/content/v1/comics/{DateTime.Now:``yyyy-MM-dd``}"
+        let url = $"https://api.strandcomics.no/striper/e24/lunch/{DateTime.Now:``yyyy-MM-dd``}"
         let! bytes = downloadUrl httpClient url
         return bytes, None
     }
