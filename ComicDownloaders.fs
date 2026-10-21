@@ -228,14 +228,16 @@ let downloadComicsKingdom (httpClient: HttpClient) (comic: string) =
             return None, None
     }
 
-let downloadCalvinAndHobbes (storageContext: StorageContext.Context) =
+// Pre-scheduled strips live in the private source bucket as {prefix}_{yyyyMMdd}_{part},
+// two per day: part 1 before noon, part 2 after.
+let downloadFromSourceBucket (storageContext: StorageContext.Context) (prefix: string) =
     task {
         match storageContext.CalvinAndHobbesBucketName with
         | None -> return None, None
         | Some bucketName ->
             let date = DateTime.Now
             let part = date.Hour / 12 + 1
-            match ObjectStore.loadBinary bucketName $"calvin_{date:yyyyMMdd}_{part}" storageContext with
+            match ObjectStore.loadBinary bucketName $"{prefix}_{date:yyyyMMdd}_{part}" storageContext with
             | Some bytes -> return Some bytes, None
             | None -> return None, None
     }

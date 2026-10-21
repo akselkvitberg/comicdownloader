@@ -69,18 +69,22 @@ If `COMICDOWNLOADER_SECRET_PREFIX` is set, it replaces the `comicdownloader-` pr
 
 `settings-onedrive` is stored as JSON and the refresh workflow writes a new secret version whenever the refresh token rotates.
 
-## Calvin And Hobbes Source
+## Source Bucket Comics (Calvin and Hobbes, The Far Side)
 
-The downloader can optionally pull Calvin and Hobbes from a private GCS bucket instead of a public feed.
+Calvin and Hobbes and The Far Side are pulled from a private GCS source bucket instead of a public feed.
+Strips are pre-scheduled, two per day, as objects named `{prefix}_{yyyyMMdd}_{part}` in the bucket root:
 
-- Only objects whose file name matches `calvin_xxxx.png`, `calvin_xxxx.jpg`, or `calvin_xxxx.jpeg` are considered.
-- The downloader selects the lexicographically newest matching object under `CALVIN_HOBBES_SOURCE_PREFIX`.
-- Existing hash-based dedupe still applies, so reprocessing the same image does not resend it.
+- `calvin_20261022_1`, `calvin_20261022_2`, ...
+- `farside_20261022_1`, `farside_20261022_2`, ...
 
-Example upload command:
+Part 1 is picked up by runs before noon (container time, UTC) and part 2 by runs after.
+A missing object for the current slot is skipped silently. Existing hash-based dedupe still applies,
+so the several runs per half-day only send each strip once.
+
+Example upload command (files already renamed to the scheduled object names):
 
 ```powershell
-gcloud storage cp .\calvin\* gs://YOUR_SOURCE_BUCKET/sources/calvin-and-hobbes/
+gcloud storage cp --content-type=image/jpeg .\farside-upload\* gs://YOUR_SOURCE_BUCKET/
 ```
 
 To enable the source, set `calvin_hobbes_source_bucket` (and optionally
