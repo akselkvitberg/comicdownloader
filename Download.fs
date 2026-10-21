@@ -11,12 +11,15 @@ open Microsoft.Extensions.Logging
 open Comics
 
 let private getFileName (bytes: byte array) =
+    let startsWith (signature: byte array) =
+        bytes.AsSpan().StartsWith(ReadOnlySpan signature)
+
     let extension =
-        match bytes[0..4] with
-        | [| 0xFFuy; 0xD8uy; _; _ |] -> ".jpg"
-        | [| 0x42uy; 0x4Duy; _; _ |] -> ".bmp"
-        | [| 0x47uy; 0x49uy; 0x46uy |] -> ".gif"
-        | _ -> ".png"
+        if startsWith [| 0xFFuy; 0xD8uy; 0xFFuy |] then ".jpg"
+        elif startsWith [| 0x42uy; 0x4Duy |] then ".bmp"
+        elif startsWith [| 0x47uy; 0x49uy; 0x46uy |] then ".gif"
+        elif startsWith "RIFF"B && bytes.Length >= 12 && bytes.AsSpan(8, 4).SequenceEqual(ReadOnlySpan "WEBP"B) then ".webp"
+        else ".png"
 
     DateTime.Now.ToString("yyyy.MM.dd") + extension
 
