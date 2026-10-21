@@ -26,6 +26,11 @@ locals {
 resource "google_secret_manager_secret" "onedrive" {
   secret_id = local.onedrive_secret_id
 
+  # The app destroys superseded versions after each rotation. Delaying the
+  # actual destruction by a day leaves a window to re-enable one if a rotation
+  # turns out bad.
+  version_destroy_ttl = "86400s"
+
   # auto{} lets Google manage replication across regions automatically (as
   # opposed to a user_managed list of regions). Simplest option and fine unless
   # data-residency rules require pinning specific regions.

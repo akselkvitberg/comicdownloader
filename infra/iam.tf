@@ -26,12 +26,14 @@ resource "google_secret_manager_secret_iam_member" "runtime_telegram_accessor" {
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
 
-# Write new versions of the OneDrive secret. This is the permission the old
-# deploy script was missing, which caused the runtime PermissionDenied on
-# secretmanager.versions.add during the refresh-onedrive job.
-resource "google_secret_manager_secret_iam_member" "runtime_onedrive_version_adder" {
+# Write new versions of the OneDrive secret (the refresh-onedrive job rotates
+# the token daily) and destroy superseded ones, which are otherwise billed every
+# month (SecretStore.destroyOldVersions). secretVersionManager covers add, list
+# and destroy without granting access to secret values; reading is the separate
+# accessor binding above.
+resource "google_secret_manager_secret_iam_member" "runtime_onedrive_version_manager" {
   secret_id = google_secret_manager_secret.onedrive.id
-  role      = "roles/secretmanager.secretVersionAdder"
+  role      = "roles/secretmanager.secretVersionManager"
   member    = "serviceAccount:${google_service_account.runtime.email}"
 }
 
